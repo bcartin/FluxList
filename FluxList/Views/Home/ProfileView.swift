@@ -10,6 +10,10 @@ struct ProfileView: View {
     @Environment(UserManager.self) private var userManager
     @Environment(AuthManager.self) private var authManager
     @Environment(StoreKitManager.self) private var storeKitManager
+    @Environment(FirebaseSyncManager.self) private var firebaseSyncManager
+    @Environment(HomeViewModel.self) private var homeViewModel
+
+    @Environment(\.modelContext) private var modelContext
 
     @State private var name = ""
     @State private var email = ""
@@ -58,7 +62,7 @@ struct ProfileView: View {
                 } }
             }
             .navigationDestination(isPresented: $isShowingSignIn) {
-                SignInView()
+                SignInView(initialMode: .signIn)
             }
             .navigationTitle("Profile")
             .navigationBarTitleDisplayMode(.inline)
@@ -102,6 +106,22 @@ struct ProfileView: View {
                 name = userManager.currentUser?.name ?? ""
                 email = userManager.currentUser?.email ?? ""
             }
+            .onChange(of: authManager.isSignedIn) { _, isSignedIn in
+                if isSignedIn {
+                    Task {
+                        // Pull down user profile, projects, and lists from Firestore
+                        if let user = userManager.currentUser {
+                            try? await firebaseSyncManager.fetchUserProfile(for: user)
+                            name = user.name
+                            email = user.email
+                        }
+                        // Fetch projects before lists so lists can be linked to projects
+                        try? await firebaseSyncManager.fetchAndMergeRemoteProjects(into: modelContext)
+                        try? await firebaseSyncManager.fetchAndMergeRemoteLists(into: modelContext)
+                        homeViewModel.loadData()
+                    }
+                }
+            }
         }
     }
 }
@@ -109,14 +129,25 @@ struct ProfileView: View {
 // MARK: - Preview
 
 #Preview {
-    ProfileView()
-        .modelContainer(SampleData.sampleContainer)
-        .environment({
-            let um = UserManager(modelContext: SampleData.sampleContainer.mainContext)
-            um.fetchOrCreateCurrentUser()
-            return um
-        }())
-        .environment(AuthManager())
-        .environment(StoreKitManager())
+    let container = SampleData.sampleContainer
+    let context = container.mainContext
+    let am = AuthManager()
+    let skm = StoreKitManager()
+    let um: UserManager = {
+        let m = UserManager(modelContext: context)
+        m.fetchOrCreateCurrentUser()
+        return m
+    }()
+    let tlm = TaskListManager(modelContext: context)
+    let pm = ProjectManager(modelContext: context)
+    let lim = ListItemManager(modelContext: context)
+
+    return ProfileView()
+        .modelContainer(container)
+        .environment(um)
+        .environment(am)
+        .environment(skm)
+        .environment(FirebaseSyncManager(authManager: am, storeKitManager: skm))
+        .environment(HomeViewModel(taskListManager: tlm, projectManager: pm, listItemManager: lim))
 }
 

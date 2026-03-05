@@ -10,6 +10,8 @@ struct SignInView: View {
     @Environment(UserManager.self) private var userManager
     @Environment(\.dismiss) private var dismiss
 
+    var initialMode: SignInViewModel.Mode = .createAccount
+
     @State private var viewModel: SignInViewModel?
 
     var body: some View {
@@ -24,11 +26,13 @@ struct SignInView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task {
             if viewModel == nil {
-                viewModel = SignInViewModel(
+                let vm = SignInViewModel(
                     initialEmail: userManager.currentUser?.email ?? "",
                     authManager: authManager,
                     userManager: userManager
                 )
+                vm.mode = initialMode
+                viewModel = vm
             }
         }
     }
@@ -92,7 +96,7 @@ struct SignInContentView: View {
                 .disabled(!viewModel.canSubmit || viewModel.isLoading)
 
                 if viewModel.mode == .createAccount {
-                    Text("By creating an account you agree to our [\("Privacy Policy")](https://example.com/privacy).")
+                    Text("By creating an account you agree to our [\("Privacy Policy")](https://garsontech.com/fluxlist/privacy-policy.html).")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity)

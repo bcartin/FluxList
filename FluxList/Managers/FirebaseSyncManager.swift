@@ -220,6 +220,14 @@ final class FirebaseSyncManager {
         try await projectRef.setData(projectData, merge: true)
     }
 
+    /// Syncs every project in the given array to Firestore sequentially.
+    func syncAllProjects(_ projects: [Project]) async throws {
+        guard canSync else { return }
+        for project in projects {
+            try await syncProject(project)
+        }
+    }
+
     /// Deletes a project document from Firestore.
     func deleteProject(_ projectID: UUID) async throws {
         guard canSync, let uid = authManager.firebaseUser?.uid else { return }
@@ -227,6 +235,40 @@ final class FirebaseSyncManager {
         try await db.collection("users").document(uid)
             .collection("projects").document(projectID.uuidString)
             .delete()
+    }
+
+    /// Fetches all projects from Firestore at `users/{uid}/projects` and merges
+    /// them into the local SwiftData store. New projects are inserted, existing
+    /// projects are updated by name.
+    func fetchAndMergeRemoteProjects(into context: ModelContext) async throws {
+        guard canSync, let uid = authManager.firebaseUser?.uid else { return }
+
+        let snapshot = try await db.collection("users").document(uid)
+            .collection("projects").getDocuments()
+
+        let allLocalProjects = (try? context.fetch(FetchDescriptor<Project>())) ?? []
+        let localProjectsByID = Dictionary(uniqueKeysWithValues: allLocalProjects.compactMap { project in
+            (project.id.uuidString, project)
+        })
+
+        for document in snapshot.documents {
+            let data = document.data()
+
+            guard let idString = data["id"] as? String,
+                  let projectUUID = UUID(uuidString: idString) else { continue }
+
+            let name = data["name"] as? String ?? ""
+
+            if let existingProject = localProjectsByID[idString] {
+                existingProject.name = name
+            } else {
+                let newProject = Project(name: name)
+                newProject.id = projectUUID
+                context.insert(newProject)
+            }
+        }
+
+        try context.save()
     }
 
     // MARK: - Fetch & Merge Lists
@@ -249,6 +291,10 @@ final class FirebaseSyncManager {
             (list.id.uuidString, list)
         })
 
+        // Build a lookup of local projects by name so remote lists can be linked
+        let allLocalProjects = (try? context.fetch(FetchDescriptor<Project>())) ?? []
+        let projectsByName = Dictionary(uniqueKeysWithValues: allLocalProjects.map { ($0.name, $0) })
+
         for document in snapshot.documents {
             let data = document.data()
 
@@ -261,6 +307,10 @@ final class FirebaseSyncManager {
             let createdBy = data["createdBy"] as? String ?? ""
             let userIDs = data["userIDs"] as? [String] ?? []
             let createdAt = (data["createdAt"] as? Timestamp)?.dateValue() ?? Date.now
+            let projectName = data["projectName"] as? String ?? ""
+
+            // Resolve the project relationship by name
+            let project = projectName.isEmpty ? nil : projectsByName[projectName]
 
             if let existingList = localListsByID[idString] {
                 // Update existing local list with remote data
@@ -269,12 +319,14 @@ final class FirebaseSyncManager {
                 existingList.iconName = iconName
                 existingList.createdBy = createdBy
                 existingList.userIDs = userIDs
+                existingList.project = project
             } else {
                 // Insert new list from remote
                 let newList = TaskList(
                     name: name,
                     colorName: colorName,
                     iconName: iconName,
+                    project: project,
                     createdBy: createdBy
                 )
                 // Set the UUID to match the remote ID so future syncs can find it

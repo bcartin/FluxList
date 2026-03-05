@@ -74,10 +74,12 @@ struct FluxListApp: App {
     }
 
     @Environment(\.scenePhase) private var scenePhase
+    @State private var showSplash = true
 
     var body: some Scene {
         WindowGroup {
-            HomeView()
+            ZStack {
+                HomeView()
                 .environment(router)
                 .environment(storeKitManager)
                 .environment(authManager)
@@ -105,6 +107,10 @@ struct FluxListApp: App {
                     )
 
                     await syncWithFirestore()
+
+                    withAnimation(.easeOut(duration: 0.4)) {
+                        showSplash = false
+                    }
                 }
                 .task {
                     await storeKitManager.listenForTransactions()
@@ -122,10 +128,25 @@ struct FluxListApp: App {
                     }
                 }
                 .sheet(isPresented: $router.isShowingCreateAccount) {
+                    // After the sign-in sheet is dismissed, sync with Firestore
+                    // so the user's profile and shared lists are pulled down.
+                    if authManager.isSignedIn {
+                        Task {
+                            await syncWithFirestore()
+                        }
+                    }
+                } content: {
                     NavigationStack {
                         SignInView()
                     }
                 }
+
+                if showSplash {
+                    SplashScreenView()
+                        .transition(.opacity)
+                        .zIndex(1)
+                }
+            }
         }
         .modelContainer(modelContainer)
     }
@@ -133,9 +154,11 @@ struct FluxListApp: App {
     /// Performs a full two-way Firestore sync:
     /// 1. Pulls the latest user profile from Firestore and applies it locally.
     /// 2. Pushes the local user profile back to Firestore.
-    /// 3. Fetches and merges any remote shared lists into SwiftData.
-    /// 4. Pushes all local lists to Firestore.
-    /// 5. Reloads the home screen data so the UI reflects the merged state.
+    /// 3. Fetches and merges remote projects into SwiftData.
+    /// 4. Pushes all local projects to Firestore.
+    /// 5. Fetches and merges remote shared lists into SwiftData (linked to projects).
+    /// 6. Pushes all local lists to Firestore.
+    /// 7. Reloads the home screen data so the UI reflects the merged state.
     ///
     /// Called on launch and each time the app returns to the foreground.
     private func syncWithFirestore() async {
@@ -150,6 +173,19 @@ struct FluxListApp: App {
             } catch {
                 logger.error("Failed to sync user profile to Firestore: \(error.localizedDescription)")
             }
+        }
+
+        // Sync projects before lists so that fetched lists can be linked to projects
+        do {
+            try await firebaseSyncManager.fetchAndMergeRemoteProjects(into: modelContainer.mainContext)
+        } catch {
+            logger.error("Failed to fetch remote projects from Firestore: \(error.localizedDescription)")
+        }
+        do {
+            let localProjects = projectManager.fetchProjects()
+            try await firebaseSyncManager.syncAllProjects(localProjects)
+        } catch {
+            logger.error("Failed to push local projects to Firestore: \(error.localizedDescription)")
         }
 
         do {
