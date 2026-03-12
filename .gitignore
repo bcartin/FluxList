@@ -28,6 +28,12 @@ fastlane/test_output
 # Firebase
 GoogleService-Info.plist
 
+# Firebase Functions
+.firebaserc
+firebase.json
+package-lock.json
+package.json
+
 # Secrets / API keys
 *.pem
 *.p12
@@ -48,3 +54,4 @@ GoogleService-Info.plist
 # Provisioning profiles
 *.mobileprovision
 *.provisionprofile
+node_modules
