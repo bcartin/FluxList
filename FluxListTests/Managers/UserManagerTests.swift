@@ -58,6 +58,39 @@ struct UserManagerTests {
         #expect(!manager.isFavorite(list: list))
     }
 
+    // MARK: - Push Notification Token
+
+    @Test func saveTokenUpdatesCurrentUser() {
+        let context = makeContext()
+        let manager = UserManager(modelContext: context)
+        manager.fetchOrCreateCurrentUser()
+
+        manager.saveToken("fcm-token-abc123")
+
+        #expect(manager.currentUser?.token == "fcm-token-abc123")
+    }
+
+    @Test func saveTokenOverwritesPreviousToken() {
+        let context = makeContext()
+        let manager = UserManager(modelContext: context)
+        manager.fetchOrCreateCurrentUser()
+
+        manager.saveToken("old-token")
+        manager.saveToken("new-token")
+
+        #expect(manager.currentUser?.token == "new-token")
+    }
+
+    @Test func saveTokenDoesNothingWithoutCurrentUser() {
+        let context = makeContext()
+        let manager = UserManager(modelContext: context)
+        // Don't call fetchOrCreateCurrentUser
+
+        manager.saveToken("some-token")
+
+        #expect(manager.currentUser == nil)
+    }
+
     // MARK: - Favorite Suggestions
 
     @Test func addFavoriteSuggestion() throws {

@@ -17,6 +17,9 @@ private let logger = Logger(subsystem: "com.fluxlist", category: "UserManager")
 final class UserManager {
     private let modelContext: ModelContext
     private var syncManager: FirebaseSyncManager?
+    /// The pending user sync task, cancelled and replaced on each mutation
+    /// so rapid changes coalesce into a single Firestore write.
+    private var pendingSyncTask: Task<Void, Never>?
 
     /// The locally persisted user profile. Always non-nil after ``fetchOrCreateCurrentUser()`` runs.
     private(set) var currentUser: User?
@@ -43,15 +46,22 @@ final class UserManager {
         }
     }
 
-    /// Pushes the current user's profile to Firestore in the background.
+    /// Debounces the user profile sync to Firestore.
+    ///
+    /// Cancels any previously pending sync and schedules a new one after a short delay,
+    /// so rapid mutations (e.g. toggling multiple favorites) result in a single write.
     private func syncCurrentUser() {
         guard let user = currentUser, let syncManager else { return }
-        Task {
+        pendingSyncTask?.cancel()
+        pendingSyncTask = Task {
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
             do {
                 try await syncManager.syncUser(user)
             } catch {
                 logger.error("Failed to sync user: \(error.localizedDescription)")
             }
+            pendingSyncTask = nil
         }
     }
 
@@ -98,6 +108,17 @@ final class UserManager {
     /// Returns `true` if the given list is in the user's favorites.
     func isFavorite(list: TaskList) -> Bool {
         currentUser?.favoriteListIDs.contains(list.id.uuidString) ?? false
+    }
+
+    // MARK: - Push Notification Token
+
+    /// Saves or updates the push notification device token for the current user,
+    /// then persists locally and syncs to Firebase.
+    func saveToken(_ token: String) {
+        guard let user = currentUser else { return }
+        user.token = token
+        save()
+        syncCurrentUser()
     }
 
     // MARK: - Favorite Suggestions
