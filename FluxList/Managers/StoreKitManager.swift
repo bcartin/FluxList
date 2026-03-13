@@ -26,8 +26,7 @@ final class StoreKitManager {
     /// Whether the current user has purchased FluxList Pro.
     /// Hardcoded to `false` during development; toggle to enable Pro features.
     var isProUser: Bool {
-        //purchasedProductIDs.contains(Self.proProductID)
-        return true
+        purchasedProductIDs.contains(Self.proProductID)
     }
 
     /// The StoreKit `Product` object for Pro, used to display price and initiate purchase.
