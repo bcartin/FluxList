@@ -17,6 +17,9 @@ final class User: Identifiable {
     /// The Firebase Authentication UID, set after sign-in. Nil for offline-only users.
     var firebaseUID: String?
 
+    /// The push notification device token, stored for remote notification delivery.
+    var token: String = ""
+
     /// UUIDs (as strings) of ``TaskList`` entries the user has marked as favorites.
     /// Favorites appear in the dedicated favorites section on the home screen.
     var favoriteListIDs: [String] = []

@@ -34,6 +34,7 @@ struct FluxListApp: App {
     @State private var taskListManager: TaskListManager
     @State private var listItemManager: ListItemManager
     @State private var firebaseSyncManager: FirebaseSyncManager
+    @State private var pushNotificationManager: PushNotificationsManager
     @State private var homeViewModel: HomeViewModel
 
     init() {
@@ -59,6 +60,7 @@ struct FluxListApp: App {
         let skm = StoreKitManager()
         let am = AuthManager()
         let fsm = FirebaseSyncManager(authManager: am, storeKitManager: skm)
+        let pnm = PushNotificationsManager(userManager: um)
 
         let hvm = HomeViewModel(taskListManager: tlm, projectManager: pm, listItemManager: lim)
 
@@ -71,6 +73,7 @@ struct FluxListApp: App {
         _authManager = State(initialValue: am)
         _firebaseSyncManager = State(initialValue: fsm)
         _homeViewModel = State(initialValue: hvm)
+        _pushNotificationManager = State(initialValue: pnm)
     }
 
     @Environment(\.scenePhase) private var scenePhase
@@ -88,8 +91,13 @@ struct FluxListApp: App {
                 .environment(taskListManager)
                 .environment(listItemManager)
                 .environment(firebaseSyncManager)
+                .environment(pushNotificationManager)
                 .environment(homeViewModel)
                 .task {
+                    // Wire the push notification manager into the AppDelegate
+                    // so UIKit delegate callbacks can forward to it.
+                    delegate.pushNotificationManager = pushNotificationManager
+
                     userManager.fetchOrCreateCurrentUser()
                     await storeKitManager.loadProducts()
                     await authManager.listenForAuthChanges()
@@ -107,6 +115,10 @@ struct FluxListApp: App {
                     )
 
                     await syncWithFirestore()
+
+                    // Request push permission after wiring is complete,
+                    // so the AppDelegate can forward the APNs token.
+                    try? await pushNotificationManager.requestPermission()
 
                     withAnimation(.easeOut(duration: 0.4)) {
                         showSplash = false
