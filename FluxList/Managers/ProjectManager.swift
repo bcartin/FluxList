@@ -13,6 +13,8 @@ private let logger = Logger(subsystem: "com.fluxlist", category: "ProjectManager
 final class ProjectManager {
     private let modelContext: ModelContext
     private var syncManager: FirebaseSyncManager?
+    /// Tracks pending sync tasks per project ID so rapid mutations coalesce into one sync.
+    private var pendingSyncTasks: [UUID: Task<Void, Never>] = [:]
 
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
@@ -32,15 +34,23 @@ final class ProjectManager {
         }
     }
 
-    /// Kicks off a background Firestore sync for the given project.
+    /// Debounces Firestore syncs for the given project.
+    ///
+    /// Cancels any previously pending sync for the same project and schedules a new one
+    /// after a short delay, preventing rapid mutations from spawning concurrent requests.
     private func syncProject(_ project: Project) {
         guard let syncManager else { return }
-        Task {
+        let projectID = project.id
+        pendingSyncTasks[projectID]?.cancel()
+        pendingSyncTasks[projectID] = Task {
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
             do {
                 try await syncManager.syncProject(project)
             } catch {
                 logger.error("Failed to sync project '\(project.name)': \(error.localizedDescription)")
             }
+            pendingSyncTasks[projectID] = nil
         }
     }
 

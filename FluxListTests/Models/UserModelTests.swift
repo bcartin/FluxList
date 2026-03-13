@@ -68,5 +68,22 @@ struct UserModelTests {
         #expect(user.favoriteSuggestions.isEmpty)
         #expect(user.friends.isEmpty)
         #expect(user.firebaseUID == nil)
+        #expect(user.token.isEmpty)
+    }
+
+    // MARK: - Token
+
+    @Test func tokenDefaultsToEmpty() {
+        let user = User(name: "Test", email: "")
+
+        #expect(user.token == "")
+    }
+
+    @Test func tokenCanBeSet() {
+        let user = User(name: "Test", email: "")
+
+        user.token = "fcm-token-abc123"
+
+        #expect(user.token == "fcm-token-abc123")
     }
 }

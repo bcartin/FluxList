@@ -20,6 +20,12 @@ final class ListItemManager {
     private var userManager: UserManager?
     private var storeKitManager: StoreKitManager?
 
+    /// Tracks pending sync tasks per list ID so rapid mutations coalesce into one sync.
+    private var pendingSyncTasks: [UUID: Task<Void, Never>] = [:]
+    /// Batches item deletions per list so bulk deletes are flushed together.
+    private var pendingDeletesByList: [UUID: [UUID]] = [:]
+    private var pendingDeleteTasks: [UUID: Task<Void, Never>] = [:]
+
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
     }
@@ -44,15 +50,24 @@ final class ListItemManager {
         }
     }
 
-    /// Kicks off a background Firestore sync for the given list (if sync is configured).
+    /// Debounces Firestore syncs for the given list.
+    ///
+    /// Cancels any previously pending sync for the same list and schedules a new one
+    /// after a short delay. This prevents bulk operations (e.g. clearing completed items)
+    /// from spawning dozens of concurrent network requests.
     private func syncList(_ list: TaskList?) {
         guard let list, let syncManager else { return }
-        Task {
+        let listID = list.id
+        pendingSyncTasks[listID]?.cancel()
+        pendingSyncTasks[listID] = Task {
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
             do {
                 try await syncManager.syncList(list)
             } catch {
                 logger.error("Failed to sync list '\(list.name)': \(error.localizedDescription)")
             }
+            pendingSyncTasks[listID] = nil
         }
     }
 
@@ -91,19 +106,33 @@ final class ListItemManager {
         syncList(item.taskList)
     }
 
-    /// Removes an item from SwiftData and deletes it from Firestore if sync is configured.
+    /// Removes an item from SwiftData and queues a Firestore deletion.
+    ///
+    /// Remote deletions are batched: item IDs are collected and flushed in a single
+    /// debounced task per list, preventing bulk "clear completed" from spawning
+    /// one network request per item.
     func deleteItem(_ item: ListItem) {
         let itemID = item.id
-        let listID = item.taskList?.id
+        let list = item.taskList
+        let listID = list?.id
         modelContext.delete(item)
         save()
         guard let listID, let syncManager else { return }
-        Task {
-            do {
-                try await syncManager.deleteItem(itemID, fromList: listID)
-            } catch {
-                logger.error("Failed to delete item from Firestore: \(error.localizedDescription)")
+
+        pendingDeletesByList[listID, default: []].append(itemID)
+        pendingDeleteTasks[listID]?.cancel()
+        pendingDeleteTasks[listID] = Task {
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            let itemIDs = pendingDeletesByList.removeValue(forKey: listID) ?? []
+            for id in itemIDs {
+                do {
+                    try await syncManager.deleteItem(id, fromList: listID)
+                } catch {
+                    logger.error("Failed to delete item from Firestore: \(error.localizedDescription)")
+                }
             }
+            pendingDeleteTasks[listID] = nil
         }
     }
 

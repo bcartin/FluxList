@@ -51,6 +51,7 @@ final class FirebaseSyncManager {
             "favoriteSuggestions": user.favoriteSuggestions,
             "itemFrequencies": user.getItemFrequencies(),
             "friends": user.friends,
+            "token": user.token,
             "updatedAt": FieldValue.serverTimestamp()
         ]
 
@@ -82,6 +83,9 @@ final class FirebaseSyncManager {
         }
         if let friends = data["friends"] as? [String] {
             user.friends = friends
+        }
+        if let token = data["token"] as? String {
+            user.token = token
         }
 
         user.firebaseUID = uid

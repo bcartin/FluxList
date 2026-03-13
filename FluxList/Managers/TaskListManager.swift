@@ -13,6 +13,8 @@ private let logger = Logger(subsystem: "com.fluxlist", category: "TaskListManage
 final class TaskListManager {
     private let modelContext: ModelContext
     private var syncManager: FirebaseSyncManager?
+    /// Tracks pending sync tasks per list ID so rapid mutations coalesce into one sync.
+    private var pendingSyncTasks: [UUID: Task<Void, Never>] = [:]
 
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
@@ -32,15 +34,23 @@ final class TaskListManager {
         }
     }
 
-    /// Kicks off a background Firestore sync for the given list.
+    /// Debounces Firestore syncs for the given list.
+    ///
+    /// Cancels any previously pending sync for the same list and schedules a new one
+    /// after a short delay, preventing rapid mutations from spawning concurrent requests.
     private func syncList(_ list: TaskList) {
         guard let syncManager else { return }
-        Task {
+        let listID = list.id
+        pendingSyncTasks[listID]?.cancel()
+        pendingSyncTasks[listID] = Task {
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
             do {
                 try await syncManager.syncList(list)
             } catch {
                 logger.error("Failed to sync list '\(list.name)': \(error.localizedDescription)")
             }
+            pendingSyncTasks[listID] = nil
         }
     }
 
