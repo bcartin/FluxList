@@ -136,6 +136,10 @@ struct FluxListApp: App {
                     }
                 }
                 .onChange(of: storeKitManager.isProUser) { _, isPro in
+                    // Ignore changes during startup (e.g. restorePurchases on launch).
+                    // Only react to purchases that happen after the app is fully loaded.
+                    guard !showSplash else { return }
+
                     if isPro && !authManager.isSignedIn {
                         // Dismiss any currently presented sheet (e.g. paywall)
                         // before presenting the create-account sheet to avoid
