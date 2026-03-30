@@ -1,7 +1,7 @@
 import SwiftUI
 import StoreKit
 
-/// The Pro upgrade paywall screen, showing feature benefits, pricing,
+/// The Pro upgrade paywall screen, showing feature benefits, plan options,
 /// and purchase / restore buttons.
 struct PaywallView: View {
     @Environment(StoreKitManager.self) private var storeKitManager
@@ -29,7 +29,7 @@ struct PaywallView: View {
 
 // MARK: - Content
 
-/// The scrollable paywall body: hero icon, benefit list, price, and action buttons.
+/// The scrollable paywall body: hero icon, benefit list, plan cards, and action buttons.
 private struct PaywallContentView: View {
     @Bindable var viewModel: PaywallViewModel
 
@@ -92,18 +92,47 @@ private struct PaywallContentView: View {
                         .stroke(AppTheme.gradientMid.opacity(0.15), lineWidth: 1)
                 )
 
-                // Price and purchase
-                VStack(spacing: 14) {
-                    if let product = viewModel.proProduct {
-                        Text(product.displayPrice)
-                            .font(.title)
-                            .bold()
-
-                        Text("One-time purchase")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                // Plan selection
+                VStack(spacing: 12) {
+                    if let yearly = viewModel.yearlyProduct {
+                        PlanCard(
+                            title: "Yearly",
+                            price: yearly.displayPrice,
+                            subtitle: "/year",
+                            badge: bestValueBadge(monthly: viewModel.monthlyProduct, yearly: yearly),
+                            isSelected: viewModel.selectedTier == .yearly
+                        ) {
+                            viewModel.selectedTier = .yearly
+                        }
                     }
 
+                    if let monthly = viewModel.monthlyProduct {
+                        PlanCard(
+                            title: "Monthly",
+                            price: monthly.displayPrice,
+                            subtitle: "/month",
+                            badge: nil,
+                            isSelected: viewModel.selectedTier == .monthly
+                        ) {
+                            viewModel.selectedTier = .monthly
+                        }
+                    }
+
+                    if let lifetime = viewModel.lifetimeProduct {
+                        PlanCard(
+                            title: "Lifetime",
+                            price: lifetime.displayPrice,
+                            subtitle: "one-time purchase",
+                            badge: nil,
+                            isSelected: viewModel.selectedTier == .lifetime
+                        ) {
+                            viewModel.selectedTier = .lifetime
+                        }
+                    }
+                }
+
+                // Purchase action
+                VStack(spacing: 14) {
                     Button {
                         Task { await viewModel.purchase() }
                     } label: {
@@ -112,7 +141,7 @@ private struct PaywallContentView: View {
                                 ProgressView()
                                     .tint(.white)
                             } else {
-                                Text(viewModel.isProUser ? "Already Purchased" : "Upgrade to Pro")
+                                Text(viewModel.purchaseButtonLabel)
                                     .bold()
                             }
                         }
@@ -122,6 +151,13 @@ private struct PaywallContentView: View {
                         .background(AppTheme.brandGradient, in: .capsule)
                     }
                     .disabled(viewModel.isPurchasing || viewModel.isProUser)
+
+                    if viewModel.selectedTier != .lifetime {
+                        Text("Subscription auto-renews. Cancel anytime in Settings.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
 
                     Button("Restore Purchases") {
                         Task { await viewModel.restore() }
@@ -139,6 +175,17 @@ private struct PaywallContentView: View {
             .padding()
         }
     }
+
+    /// Computes a savings badge like "Save 50%" for the yearly plan relative to monthly pricing.
+    private func bestValueBadge(monthly: Product?, yearly: Product) -> String? {
+        guard let monthly else { return nil }
+        let yearlyPrice = yearly.price
+        let annualMonthly = monthly.price * 12
+        guard annualMonthly > 0 else { return nil }
+        let savings = ((annualMonthly - yearlyPrice) / annualMonthly * 100)
+            .formatted(.number.precision(.fractionLength(0)))
+        return "Save \(savings)%"
+    }
 }
 
 #Preview {
@@ -146,6 +193,68 @@ private struct PaywallContentView: View {
         PaywallView()
     }
     .environment(StoreKitManager())
+}
+
+// MARK: - Plan Card
+
+/// A selectable plan card showing title, price, and optional badge.
+private struct PlanCard: View {
+    let title: String
+    let price: String
+    let subtitle: String
+    let badge: String?
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Text(title)
+                            .font(.headline)
+
+                        if let badge {
+                            Text(badge)
+                                .font(.caption)
+                                .bold()
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 2)
+                                .background(AppTheme.gradientMid.opacity(0.15), in: .capsule)
+                                .foregroundStyle(AppTheme.gradientMid)
+                        }
+                    }
+
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Text(price)
+                    .font(.title3)
+                    .bold()
+            }
+            .padding()
+            .background(
+                isSelected ? AppTheme.subtleGradient : LinearGradient(
+                    colors: [Color.clear],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                in: .rect(cornerRadius: 14)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(
+                        isSelected ? AppTheme.gradientMid : Color.secondary.opacity(0.2),
+                        lineWidth: isSelected ? 2 : 1
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+    }
 }
 
 // MARK: - Benefit Row
