@@ -1,10 +1,10 @@
 import Foundation
 import StoreKit
 
-/// Manages the FluxList Pro in-app purchase using StoreKit 2.
+/// Manages FluxList Pro subscriptions and lifetime purchase using StoreKit 2.
 ///
 /// Responsibilities:
-/// - Loading available products from the App Store.
+/// - Loading available products (monthly, yearly, lifetime) from the App Store.
 /// - Processing purchases and verifying receipts.
 /// - Restoring previous purchases on new devices.
 /// - Listening for transaction updates (e.g. renewals, refunds) in the background.
@@ -13,34 +13,61 @@ import StoreKit
 /// Firestore sync and auto-favorite suggestions.
 @MainActor @Observable
 final class StoreKitManager {
-    /// The App Store Connect product identifier for the Pro upgrade.
-    static let proProductID = "com.garsontech.fluxlist.pro"
+    // MARK: - Product Identifiers
 
-    /// All products fetched from the App Store (currently just the Pro product).
+    /// Monthly auto-renewable subscription.
+    static let monthlyProductID = "com.garsontech.fluxlist.monthly"
+    /// Yearly auto-renewable subscription.
+    static let yearlyProductID = "com.garsontech.fluxlist.yearly"
+    /// One-time lifetime purchase (the original Pro product).
+    static let lifetimeProductID = "com.garsontech.fluxlist.pro"
+
+    /// All product identifiers that grant Pro access.
+    static let allProductIDs: Set<String> = [
+        monthlyProductID,
+        yearlyProductID,
+        lifetimeProductID
+    ]
+
+    // MARK: - State
+
+    /// All products fetched from the App Store.
     private(set) var products: [Product] = []
     /// Product IDs the user currently owns. Populated on launch and after purchases.
     private(set) var purchasedProductIDs: Set<String> = []
     /// `true` while products are being fetched from the App Store.
     private(set) var isLoading = false
 
-    /// Whether the current user has purchased FluxList Pro.
-    /// Hardcoded to `false` during development; toggle to enable Pro features.
+    // MARK: - Computed Properties
+
+    /// Whether the current user has an active Pro entitlement
+    /// (any active subscription or lifetime purchase).
     var isProUser: Bool {
-        purchasedProductIDs.contains(Self.proProductID)
+        !purchasedProductIDs.isDisjoint(with: Self.allProductIDs)
     }
 
-    /// The StoreKit `Product` object for Pro, used to display price and initiate purchase.
-    var proProduct: Product? {
-        products.first { $0.id == Self.proProductID }
+    /// The monthly subscription product.
+    var monthlyProduct: Product? {
+        products.first { $0.id == Self.monthlyProductID }
     }
 
-    /// Fetches the Pro product metadata from the App Store.
+    /// The yearly subscription product.
+    var yearlyProduct: Product? {
+        products.first { $0.id == Self.yearlyProductID }
+    }
+
+    /// The one-time lifetime purchase product.
+    var lifetimeProduct: Product? {
+        products.first { $0.id == Self.lifetimeProductID }
+    }
+
+    /// Fetches all Pro product metadata from the App Store.
     func loadProducts() async {
         isLoading = true
         defer { isLoading = false }
 
         do {
-            products = try await Product.products(for: [Self.proProductID])
+            products = try await Product.products(for: Self.allProductIDs)
         } catch {
             print("Failed to load products: \(error)")
         }
