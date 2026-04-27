@@ -111,37 +111,34 @@ private struct ListDetailContentView: View {
                 addItem()
             }
 
-            Group {
-                if isTextFieldFocused {
-                    FavoriteSuggestionsView(
-                        suggestions: userManager.currentUser?.favoriteSuggestions ?? [],
-                        filter: viewModel.newItemName,
-                        existingItems: Set(viewModel.sortedItems.map(\.name))
-                    ) { suggestion in
-                        addItem(suggestion)
-                    }
-                    .transition(.opacity)
-                } else {
-                    List {
-                        ForEach(viewModel.sortedItems) { item in
-                            ListItemRow(item: item) {
-                                withAnimation {
-                                    viewModel.toggleCompletion(item)
-                                }
-                            }
-                        }
-                        .onDelete { indexSet in
-                            for index in indexSet {
-                                let item = viewModel.sortedItems[index]
-                                viewModel.deleteItem(item)
-                            }
+            List {
+                ForEach(viewModel.sortedItems) { item in
+                    ListItemRow(item: item) {
+                        withAnimation {
+                            viewModel.toggleCompletion(item)
                         }
                     }
-                    .transition(.opacity)
+                }
+                .onDelete { indexSet in
+                    for index in indexSet {
+                        let item = viewModel.sortedItems[index]
+                        viewModel.deleteItem(item)
+                    }
                 }
             }
-            .animation(.easeInOut(duration: 0.25), value: isTextFieldFocused)
+
+            if isTextFieldFocused {
+                FavoriteSuggestionsView(
+                    suggestions: userManager.currentUser?.favoriteSuggestions ?? [],
+                    filter: viewModel.newItemName,
+                    existingItems: Set(viewModel.sortedItems.map(\.name))
+                ) { suggestion in
+                    addItem(suggestion)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
+        .animation(.easeInOut(duration: 0.25), value: isTextFieldFocused)
         .background(.secondaryBackground)
         .toolbar {
             ToolbarItem(placement: .keyboard) {

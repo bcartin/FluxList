@@ -25,19 +25,22 @@ struct FavoriteSuggestionsView: View {
         return available.filter { $0.localizedStandardContains(filter) }
     }
 
-    var body: some View {
-        if filteredSuggestions.isEmpty {
-            ContentUnavailableView.search(text: filter)
-        } else {
-            ScrollView {
-                VStack(alignment: .leading) {
-                    Label("Favorites", systemImage: "star.fill")
-                        .font(.subheadline)
-                        .bold()
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal)
+    private let rows = [
+        GridItem(.fixed(36)),
+        GridItem(.fixed(36))
+    ]
 
-                    FlowLayout {
+    var body: some View {
+        if !filteredSuggestions.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Favorites", systemImage: "star.fill")
+                    .font(.subheadline)
+                    .bold()
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal)
+
+                ScrollView(.horizontal) {
+                    LazyHGrid(rows: rows, spacing: 8) {
                         ForEach(filteredSuggestions, id: \.self) { suggestion in
                             Button {
                                 onSelect(suggestion)
@@ -58,57 +61,12 @@ struct FavoriteSuggestionsView: View {
                     }
                     .padding(.horizontal)
                 }
-                .padding(.vertical)
+                .scrollIndicators(.hidden)
             }
+            .padding(.vertical)
+            .background(.bar)
         }
     }
 }
 
-// MARK: - Flow Layout
 
-/// A simple wrapping horizontal layout for chips/tags.
-private struct FlowLayout: Layout {
-    var spacing: CGFloat = 8
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let result = arrange(proposal: proposal, subviews: subviews)
-        return result.size
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let result = arrange(proposal: proposal, subviews: subviews)
-        for (index, position) in result.positions.enumerated() {
-            subviews[index].place(
-                at: CGPoint(x: bounds.minX + position.x, y: bounds.minY + position.y),
-                proposal: .unspecified
-            )
-        }
-    }
-
-    private func arrange(proposal: ProposedViewSize, subviews: Subviews) -> (positions: [CGPoint], size: CGSize) {
-        let maxWidth = proposal.width ?? .infinity
-        var positions: [CGPoint] = []
-        var currentX: CGFloat = 0
-        var currentY: CGFloat = 0
-        var rowHeight: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-
-            if currentX + size.width > maxWidth, currentX > 0 {
-                currentX = 0
-                currentY += rowHeight + spacing
-                rowHeight = 0
-            }
-
-            positions.append(CGPoint(x: currentX, y: currentY))
-            rowHeight = max(rowHeight, size.height)
-            currentX += size.width + spacing
-        }
-
-        return (
-            positions,
-            CGSize(width: maxWidth, height: currentY + rowHeight)
-        )
-    }
-}
