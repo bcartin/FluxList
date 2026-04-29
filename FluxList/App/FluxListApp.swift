@@ -100,6 +100,7 @@ struct FluxListApp: App {
 
                     userManager.fetchOrCreateCurrentUser()
                     await storeKitManager.loadProducts()
+                    await storeKitManager.restorePurchases()
                     await authManager.listenForAuthChanges()
 
                     // Wire sync manager into managers once ready
@@ -135,8 +136,22 @@ struct FluxListApp: App {
                     }
                 }
                 .onChange(of: storeKitManager.isProUser) { _, isPro in
+                    // Ignore changes during startup (e.g. restorePurchases on launch).
+                    // Only react to purchases that happen after the app is fully loaded.
+                    guard !showSplash else { return }
+
                     if isPro && !authManager.isSignedIn {
-                        router.isShowingCreateAccount = true
+                        // Dismiss any currently presented sheet (e.g. paywall)
+                        // before presenting the create-account sheet to avoid
+                        // a simultaneous-sheet crash.
+                        router.isShowingPaywall = false
+
+                        Task {
+                            // Give SwiftUI a moment to finish dismissing
+                            // the previous sheet before presenting the next one.
+                            try? await Task.sleep(for: .milliseconds(500))
+                            router.isShowingCreateAccount = true
+                        }
                     }
                 }
                 .sheet(isPresented: $router.isShowingCreateAccount) {
